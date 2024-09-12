@@ -21,8 +21,7 @@ interface IPdfPage {
 	rotation: number
 }
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
-
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`
 export default function RotatePdf() {
 	const [pages, setPages] = useState<IPdfPage[]>([])
 	const [isLoadingPdf, setIsLoadingPdf] = useState(false)
