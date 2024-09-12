@@ -1,101 +1,262 @@
-import Image from "next/image";
+"use client"
+import classNames from "classnames"
+import { Button } from "./components/Button"
+import { FaRotate, MagnifyingMinus, MagnifyingPlus } from "./components/FaIcons"
+import { Footer } from "./components/Footer"
+import { Header } from "./components/Header"
+import { Spinner } from "./components/Spinner"
+import { FileDrop } from "./components/FileDrop"
+import { RoundedIconButton } from "./components/RoundedIconButton"
+import { downloadBlob } from "./lib/downloadBlob"
+import { fileToUInt8Array } from "./lib/filetToUInt8Array"
+import { removeFileExt } from "./lib/removeFileExt"
+import { PDFDocument, degrees } from "pdf-lib"
+import { FC, useState } from "react"
+import { Document, Page, pdfjs } from "react-pdf"
+import "react-pdf/dist/Page/AnnotationLayer.css"
+import "react-pdf/dist/Page/TextLayer.css"
 
-export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+interface IPdfPage {
+	pageNum: number
+	rotation: number
+}
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+
+export default function RotatePdf() {
+	const [pages, setPages] = useState<IPdfPage[]>([])
+	const [isLoadingPdf, setIsLoadingPdf] = useState(false)
+	const [pdfFile, setPdfFile] = useState<File | undefined>(undefined)
+	const [pdfData, setPdfData] = useState<Uint8Array | undefined>(undefined)
+	const [pageWidth, setPageWidth] = useState(200)
+	const [fileName, setFileName] = useState("")
+	const minPageWidth = 100
+	const maxPageWidth = 500
+
+	const addFiles = async (files: FileList) => {
+		setIsLoadingPdf(true)
+
+		try {
+			const file = files[0]
+			const data = await fileToUInt8Array(file)
+			const dataCopy = new Uint8Array(data)
+			setFileName(file.name)
+			setPdfData(dataCopy)
+			setPdfFile(file)
+		} catch (err) {
+			console.warn(err)
+		}
+	}
+
+	const onDownload = async () => {
+		const downloadDoc = await PDFDocument.load(pdfData!)
+		const pageCount = downloadDoc.getPageCount()
+		for (let i = 0; i < pageCount; i++) {
+			const page = downloadDoc.getPage(i)
+			page.setRotation(degrees(pages[i].rotation))
+		}
+
+		const bytes = await downloadDoc.save()
+		const blob = new Blob([bytes], { type: "application/pdf" })
+		downloadBlob(blob, `${removeFileExt(fileName)}.pdf`)
+	}
+
+	const onRotateAll = () => {
+		const newPages = pages.map(p => {
+			p.rotation += 90
+			return p
+		})
+		setPages(newPages)
+	}
+
+	const onZoom = (increase: boolean) => {
+		if (increase) {
+			setPageWidth(Math.min(pageWidth + 50, maxPageWidth))
+		} else {
+			setPageWidth(Math.max(pageWidth - 50, minPageWidth))
+		}
+	}
+
+	const onClearPDF = () => {
+		setPages([])
+		setPdfData(undefined)
+	}
+
+	const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+		const list = Array.from({ length: numPages }, (_, i) => ({
+			rotation: 0,
+			pageNum: i + 1,
+		}))
+		setPages(list)
+		setIsLoadingPdf(false)
+	}
+
+	return (
+		<main>
+			<Header />
+			<div className="bg-[#f7f5ee] text-black">
+				<div className="container mx-auto py-20 space-y-5">
+					<div className="flex flex-col text-center !mb-10 space-y-5">
+						<h1 className="text-5xl font-serif">Rotate PDF Pages</h1>
+						<p className="mt-2 text-gray-600 max-w-lg mx-auto">
+							Simply click on a page to rotate it. You can then download your
+							modified PDF.
+						</p>
+					</div>
+
+					{pages.length > 0 && (
+						<div className="flex justify-center items-center space-x-3 selecto-ignore">
+							<Button className="!w-auto" onClick={onRotateAll}>
+								Rotate all
+							</Button>
+							<Button
+								className="!w-auto !bg-gray-800"
+								onClick={onClearPDF}
+								aria-label="Remove this PDF and select a new one"
+								data-microtip-position="top"
+								role="tooltip"
+							>
+								Remove PDF
+							</Button>
+							<RoundedIconButton
+								disabled={pageWidth === maxPageWidth}
+								aria-label="Zoom in"
+								data-microtip-position="top"
+								role="tooltip"
+								className="!bg-white"
+								onClick={() => onZoom(true)}
+							>
+								<MagnifyingPlus className="w-5 h-5" />
+							</RoundedIconButton>
+							<RoundedIconButton
+								disabled={pageWidth === minPageWidth}
+								aria-label="Zoom out"
+								data-microtip-position="top"
+								role="tooltip"
+								className="!bg-white"
+								onClick={() => onZoom(false)}
+							>
+								<MagnifyingMinus className="w-5 h-5" />
+							</RoundedIconButton>
+						</div>
+					)}
+
+					{pages.length === 0 && !isLoadingPdf && (
+						<div className="w-full flex justify-center">
+							<FileDrop onFileChange={addFiles} />
+						</div>
+					)}
+
+					{isLoadingPdf && (
+						<div className="flex justify-center">
+							<Spinner color="black" />
+						</div>
+					)}
+					<Document
+						file={pdfFile}
+						onLoadSuccess={onDocumentLoadSuccess}
+						onLoadError={() => setIsLoadingPdf(false)}
+						noData={null}
+						loading={null}
+					>
+						{!isLoadingPdf && (
+							<div className="flex flex-wrap justify-center">
+								{pages.map((page, i) => {
+									return (
+										<div
+											key={i}
+											className="m-3"
+											style={{
+												maxWidth: `${pageWidth}px`,
+												flex: `0 0 ${pageWidth}px`,
+											}}
+										>
+											<PdfPage
+												index={i}
+												width={pageWidth - 24}
+												name={`${i + 1}`}
+												rotation={page.rotation}
+												onRotate={degrees => {
+													page.rotation = degrees
+													setPages([...pages])
+												}}
+											/>
+										</div>
+									)
+								})}
+							</div>
+						)}
+					</Document>
+
+					{pages.length > 0 && (
+						<div className="flex flex-col justify-center items-center space-y-3 selecto-ignore">
+							<Button
+								onClick={onDownload}
+								className="!w-auto shadow"
+								aria-label="Split and download PDF"
+								data-microtip-position="top"
+								role="tooltip"
+							>
+								Download
+							</Button>
+						</div>
+					)}
+				</div>
+			</div>
+			<Footer />
+		</main>
+	)
+}
+
+interface IPdfPageProps {
+	index: number
+	name: string
+	rotation: number
+	width: number
+	onRotate(degrees: number): void
+}
+const PdfPage: FC<IPdfPageProps> = ({
+	index,
+	name,
+	rotation,
+	width,
+	onRotate,
+}) => {
+	return (
+		<div
+			className="relative cursor-pointer pdf-page"
+			data-page-num={index}
+			onClick={() => onRotate(rotation + 90)}
+		>
+			<div
+				className={
+					"absolute z-10 top-1 right-1 rounded-full p-1 hover:scale-105 hover:fill-white bg-[#ff612f] fill-white"
+				}
+			>
+				<FaRotate className="w-3" />
+			</div>
+			<div className="overflow-hidden transition-transform">
+				<div
+					className={
+						"relative h-full w-full flex flex-col justify-between items-center shadow-md p-3 bg-white hover:bg-gray-50"
+					}
+				>
+					<div
+						className={classNames(
+							"pointer-events-none w-full shrink object-contain transition-transform "
+						)}
+						style={{
+							transform: `rotate(${rotation}deg)`,
+						}}
+					>
+						<Page pageIndex={index} width={width} renderMode="canvas" />
+					</div>
+
+					<div className="w-[90%] text-center shrink-0 text-xs italic overflow-hidden text-ellipsis whitespace-nowrap">
+						{name}
+					</div>
+				</div>
+			</div>
+		</div>
+	)
 }
